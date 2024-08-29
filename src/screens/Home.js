@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext, useRef } from "react";
-import { View, StyleSheet, Image, TouchableOpacity, Alert, ActivityIndicator } from "react-native";
+import { View, StyleSheet, Image, TouchableOpacity, Alert, ActivityIndicator, Dimensions } from "react-native";
 import { Layout, Text } from "react-native-rapi-ui";
 import * as Location from 'expo-location';
 import MapView, { Marker, Circle } from 'react-native-maps';
@@ -7,22 +7,33 @@ import { getFirestore, doc, setDoc, onSnapshot, collection, query, where, getDoc
 import { getAuth } from "firebase/auth";
 import { AuthContext } from '../provider/AuthProvider';
 import Icon from 'react-native-vector-icons/FontAwesome';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Notifications from 'expo-notifications';
+
+const { width, height } = Dimensions.get('window');
 
 export default function ({ navigation }) {
   const [location, setLocation] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
   const [selectedCircle, setSelectedCircle] = useState(null);
-  const [circleMembers, setCircleMembers] = useState({});
-  const [circles, setCircles] = useState([]);
+  const [selectedCircleData, setSelectedCircleData] = useState(null);
   const [profilePictureURL, setProfilePictureURL] = useState(null);
   const { userData } = useContext(AuthContext);
   const auth = getAuth();
   const db = getFirestore();
 
   const [isLoading, setIsLoading] = useState(true);
+  const [isPickerVisible, setIsPickerVisible] = useState(false);
+  const [circles, setCircles] = useState([]);
 
   const locationSubscription = useRef(null);
 
+  const [proximityAlerts, setProximityAlerts] = useState({
+    enabled: false,
+    distance: 0.5,
+  });
+
+  // Getting Location
   useEffect(() => {
     (async () => {
       let { status } = await Location.requestForegroundPermissionsAsync();
@@ -31,7 +42,6 @@ export default function ({ navigation }) {
         return;
       }
 
-      // Start watching position
       locationSubscription.current = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.High,
@@ -45,7 +55,6 @@ export default function ({ navigation }) {
       );
     })();
 
-    // Cleanup function
     return () => {
       if (locationSubscription.current) {
         locationSubscription.current.remove();
@@ -53,6 +62,7 @@ export default function ({ navigation }) {
     };
   }, []);
 
+  // Loading the user's data
   useEffect(() => {
     if (userData === null) {
       setIsLoading(true);
@@ -63,11 +73,47 @@ export default function ({ navigation }) {
     }
   }, [userData]);
 
+  // Fetching the circle members
   useEffect(() => {
     if (selectedCircle) {
       fetchCircleMembers();
     }
   }, [selectedCircle]);
+
+  // Setting up the notification handler
+  useEffect(() => {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      }),
+    });
+
+    (async () => {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission required', 'Notifications are required for proximity alerts.');
+      }
+    })();
+  }, []);
+
+  // Fetching the user's data
+  useEffect(() => {
+    if (userData?.uid) {
+      const userRef = doc(db, "users", userData.uid);
+      const unsubscribe = onSnapshot(userRef, (doc) => {
+        if (doc.exists()) {
+          const data = doc.data();
+          setProximityAlerts({
+            enabled: data.proximityAlertsEnabled || false,
+            distance: data.proximityDistance || 0.5,
+          });
+        }
+      });
+      return () => unsubscribe();
+    }
+  }, [userData]);
 
   const fetchUserCircles = async () => {
     if (userData?.uid) {
@@ -96,26 +142,78 @@ export default function ({ navigation }) {
   const fetchCircleMembers = async () => {
     if (!selectedCircle) return;
     const circleRef = doc(db, "circles", selectedCircle.id);
-    const circleDoc = await getDoc(circleRef);
-    if (circleDoc.exists()) {
-      const members = circleDoc.data().members;
-      const usersRef = collection(db, "users");
-      const q = query(usersRef, where("uid", "in", members));
-      const querySnapshot = await getDocs(q);
-      const memberData = {};
-      querySnapshot.forEach((doc) => {
-        const userData = doc.data();
-        memberData[doc.id] = {
-          uid: doc.id,
-          name: userData.name,
-          email: userData.email,
-          location: userData.location,
-          lastTracked: userData.lastTracked,
-          profilePictureURL: userData.profilePictureURL
-        };
-      });
-      setCircleMembersData(memberData);
-    }
+    const unsubscribe = onSnapshot(circleRef, async (docSnapshot) => {
+      if (docSnapshot.exists()) {
+        const circleData = docSnapshot.data();
+        const memberPromises = circleData.members.map(memberId => 
+          getDoc(doc(db, "users", memberId))
+        );
+        try {
+          const memberDocs = await Promise.all(memberPromises);
+          const memberData = memberDocs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          console.log(memberData);
+          setSelectedCircleData(memberData);
+          checkProximity(memberData);
+        } catch (error) {
+          console.error("Error fetching member data:", error);
+          Alert.alert("Error", "Failed to fetch member data. Please try again.");
+        }
+      } else {
+        console.error("Circle data not found for selected circle:", selectedCircle);
+        Alert.alert(
+          "Error",
+          "Circle data not found. Please try again or contact support if the issue persists.",
+          [{ text: "OK" }]
+        );
+      }
+    });
+
+    return unsubscribe;
+  };
+
+  const checkProximity = (members) => {
+    if (!proximityAlerts.enabled || !location) return;
+
+    Object.values(members).forEach((member) => {
+      if (member.uid !== userData.uid && member.location) {
+        const distance = calculateDistance(
+          location.coords.latitude,
+          location.coords.longitude,
+          member.location.latitude,
+          member.location.longitude
+        );
+
+        if (distance <= proximityAlerts.distance) {
+          sendProximityAlert(member);
+        }
+      }
+    });
+  };
+
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distance = R * c;
+    return distance;
+  };
+
+  const sendProximityAlert = async (member) => {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "Friend Nearby!",
+        body: `${member.name || member.email} is within ${proximityAlerts.distance} miles of you!`,
+      },
+      trigger: null,
+    });
   };
 
   const updateLocationInFirestore = async (location) => {
@@ -149,9 +247,8 @@ export default function ({ navigation }) {
     }
   };
 
-  const proximityDistance = userData?.proximityDistance || 0.5;
   const handleMarkerPress = (userId) => {
-    const member = circleMembersData[userId];
+    const member = selectedCircleData[userId];
     if (member) {
       const lastTracked = member.lastTracked ? new Date(member.lastTracked.toDate()).toLocaleString() : 'Unknown';
       Alert.alert(
@@ -162,24 +259,30 @@ export default function ({ navigation }) {
     }
   };
 
-  const [isPickerVisible, setIsPickerVisible] = useState(false);
-  const [circleMembersData, setCircleMembersData] = useState({});
+  const handleCircleSelect = (circle) => {
+    setSelectedCircle(circle);
+  };
 
   if (isLoading) {
     return (
       <Layout>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#007AFF" />
-          <Text style={styles.loadingText}>
-            Gathering your CircL...
-          </Text>
-          <Icon 
-            name="users" 
-            size={60} 
-            color="#007AFF"
-            style={styles.loadingIcon}
-          />
-        </View>
+        <LinearGradient
+          colors={['#4c669f', '#3b5998', '#192f6a']}
+          style={styles.loadingContainer}
+        >
+          <View style={styles.loadingContent}>
+            <ActivityIndicator size="large" color="#ffffff" />
+            <Text style={styles.loadingText}>
+              Gathering your CircL...
+            </Text>
+            <Icon 
+              name="users" 
+              size={80} 
+              color="#ffffff"
+              style={styles.loadingIcon}
+            />
+          </View>
+        </LinearGradient>
       </Layout>
     );
   }
@@ -188,25 +291,17 @@ export default function ({ navigation }) {
     <Layout>
       <View style={styles.container}>
         <View style={styles.overlay}>
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={() => navigation.goBack()}
-          >
-            <Icon name="times" size={24} color="#007AFF" />
-          </TouchableOpacity>
           {circles.length > 0 ? (
             <TouchableOpacity
-              style={styles.pickerButton}
+              style={styles.dropdownButton}
               onPress={() => setIsPickerVisible(!isPickerVisible)}
             >
-              <Text style={styles.pickerButtonText}>
-                {selectedCircle ? selectedCircle.name : 'Select CircL'}
+              <Text style={styles.dropdownButtonText}>
+                {selectedCircle ? selectedCircle.name : "Select a Circle"}
               </Text>
-              <Icon name="chevron-down" size={16} color="#007AFF" />
+              <Icon name="chevron-down" size={20} color="#fff" />
             </TouchableOpacity>
-          ) : (
-            <Text>No circles available</Text>
-          )}
+          ) : null}
           {isPickerVisible && (
             <View style={styles.pickerContainer}>
               {circles.map((circle) => (
@@ -214,7 +309,7 @@ export default function ({ navigation }) {
                   key={circle.id}
                   style={styles.pickerItem}
                   onPress={() => {
-                    setSelectedCircle(circle);
+                    handleCircleSelect(circle);
                     setIsPickerVisible(false);
                   }}
                 >
@@ -228,42 +323,54 @@ export default function ({ navigation }) {
           <MapView
             style={styles.map}
             region={{
-              latitude: location.coords.latitude,
-              longitude: location.coords.longitude,
+              latitude: location?.coords.latitude || 0,
+              longitude: location?.coords.longitude || 0,
               latitudeDelta: 0.0922,
               longitudeDelta: 0.0421,
             }}
           >
-            <Marker
-              coordinate={{
-                latitude: location.coords.latitude,
-                longitude: location.coords.longitude,
-              }}
-              title="Your Location"
-            >
-              <Image
-                source={{ uri: profilePictureURL }}
-                style={{ width: 40, height: 40, borderRadius: 20 }}
+            {location && (
+              <Marker
+                coordinate={{
+                  latitude: location.coords.latitude,
+                  longitude: location.coords.longitude,
+                }}
+                title="Your Location"
+              >
+                <Image
+                  source={{ uri: profilePictureURL }}
+                  style={{ width: 40, height: 40, borderRadius: 20 }}
+                />
+              </Marker>
+            )}
+             {selectedCircle && selectedCircleData && selectedCircleData.map((member) => (
+                member.location && (
+                  <Marker
+                    key={member.id}
+                    coordinate={{
+                      latitude: member.location.latitude,
+                      longitude: member.location.longitude,
+                    }}
+                    title={member.name || member.email}
+                  >
+                    <Image
+                      source={{ uri: member.profilePictureURL || profilePictureURL }}
+                      style={{ width: 40, height: 40, borderRadius: 20 }}
+                    />
+                    </Marker>
+                )
+              ))}
+            {proximityAlerts.enabled && location && (
+              <Circle
+                center={{
+                  latitude: location.coords.latitude,
+                  longitude: location.coords.longitude,
+                }}
+                radius={proximityAlerts.distance * 1609.34}
+                fillColor="rgba(0, 150, 255, 0.2)"
+                strokeColor="rgba(0, 150, 255, 0.5)"
               />
-            </Marker>
-            {Object.values(circleMembersData).map((member) => (
-              member.location && (
-                <Marker
-                  key={member.uid}
-                  coordinate={{
-                    latitude: member.location.latitude,
-                    longitude: member.location.longitude,
-                  }}
-                  title={member.name || member.email}
-                  onPress={() => handleMarkerPress(member.uid)}
-                >
-                  <Image
-                    source={{ uri: member.profilePictureURL }}
-                    style={{ width: 40, height: 40, borderRadius: 20 }}
-                  />
-                </Marker>
-              )
-            ))}
+            )}
           </MapView>
         ) : (
           <Text>{errorMsg || 'Loading map...'}</Text>
@@ -290,25 +397,17 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 5,
   },
-  closeButton: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    zIndex: 2,
-  },
-  pickerButton: {
+  dropdownButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#fff',
+    backgroundColor: '#007AFF',
     padding: 10,
     borderRadius: 5,
-    borderWidth: 1,
-    borderColor: '#007AFF',
   },
-  pickerButtonText: {
+  dropdownButtonText: {
     fontSize: 16,
-    color: '#007AFF',
+    color: '#fff',
   },
   pickerContainer: {
     marginTop: 5,
@@ -324,5 +423,25 @@ const styles = StyleSheet.create({
   },
   pickerItemText: {
     fontSize: 16,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: width,
+    height: height,
+  },
+  loadingContent: {
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    marginVertical: 20,
+    textAlign: 'center',
+  },
+  loadingIcon: {
+    marginTop: 20,
   },
 });

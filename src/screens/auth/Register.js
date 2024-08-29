@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from "react";
-import { View, Alert, StyleSheet, TouchableOpacity, Platform, Image, Keyboard, TouchableWithoutFeedback } from "react-native";
+import { View, Alert, StyleSheet, TouchableOpacity, Image, Keyboard, TouchableWithoutFeedback } from "react-native";
 import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
 import { getFirestore, setDoc, doc } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Layout, Text, TextInput, Button, themeColor } from "react-native-rapi-ui";
 import * as ImagePicker from 'expo-image-picker';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function ({ navigation }) {
   const auth = getAuth();
@@ -89,107 +91,145 @@ export default function ({ navigation }) {
     }
   }
 
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: '#121212',
+    },
+    gradientBackground: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      top: 0,
+      height: '100%',
+    },
+    content: {
+      flex: 1,
+      padding: 20,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    title: {
+      fontSize: 32,
+      fontWeight: "bold",
+      color: '#ffffff',
+      marginBottom: 30,
+      textAlign: 'center',
+    },
+    imageContainer: {
+      marginBottom: 30,
+    },
+    profilePicture: {
+      width: 120,
+      height: 120,
+      borderRadius: 60,
+    },
+    placeholderImage: {
+      width: 120,
+      height: 120,
+      borderRadius: 60,
+      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    placeholderText: {
+      color: '#bb86fc',
+      fontSize: 16,
+    },
+    input: {
+      marginBottom: 15,
+      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+      borderRadius: 8,
+      borderWidth: 0,
+      width: '100%',
+    },
+    inputText: {
+      color: '#ffffff',
+    },
+    button: {
+      marginTop: 20,
+      marginBottom: 10,
+      backgroundColor: '#bb86fc',
+      borderRadius: 8,
+      width: '100%',
+    },
+    loginText: {
+      marginTop: 20,
+      color: '#ffffff',
+    },
+    loginLink: {
+      color: '#bb86fc',
+      fontWeight: "bold",
+    },
+  });
+
   return (
     <Layout>
+      <LinearGradient
+        colors={['#1a1a1a', '#121212']}
+        style={styles.gradientBackground}
+      />
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <KeyboardAwareScrollView contentContainerStyle={styles.container}>
-          <Text size="h2" style={styles.title}>Create Account</Text>
-          <TouchableOpacity onPress={pickImage} style={styles.imageContainer}>
-            {profilePicture ? (
-              <Image source={{ uri: profilePicture }} style={styles.profilePicture} />
-            ) : (
-              <View style={styles.placeholderImage}>
-                <Text size="h4" style={styles.placeholderText}>Add Photo*</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          <TextInput
-            containerStyle={styles.input}
-            placeholder="Enter your name"
-            value={name}
-            onChangeText={(text) => setName(text)}
-          />
-          <TextInput
-            containerStyle={styles.input}
-            placeholder="Enter email"
-            value={email}
-            onChangeText={(text) => setEmail(text)}
-            autoCapitalize="none"
-            keyboardType="email-address"
-          />
-          <TextInput
-            containerStyle={styles.input}
-            placeholder="Enter password"
-            value={password}
-            secureTextEntry
-            onChangeText={(text) => setPassword(text)}
-          />
-          <Button
-            text={loading ? "Creating Account..." : "Sign Up"}
-            onPress={() => {
-              register();
-            }}
-            style={styles.button}
-            disabled={loading || !profilePicture}
-          />
-          <Text style={styles.loginText}>
-            Already have an account?{" "}
-            <Text
-              size="sm"
-              style={styles.loginLink}
-              onPress={() => navigation.navigate("Login")}
-            >
-              Log In
+          <View style={styles.content}>
+            <Text style={styles.title}>Create Account</Text>
+            <TouchableOpacity onPress={pickImage} style={styles.imageContainer}>
+              {profilePicture ? (
+                <Image source={{ uri: profilePicture }} style={styles.profilePicture} />
+              ) : (
+                <View style={styles.placeholderImage}>
+                  <Ionicons name="camera-outline" size={40} color="#bb86fc" />
+                  <Text style={styles.placeholderText}>Add Photo</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            <TextInput
+              containerStyle={styles.input}
+              style={styles.inputText}
+              placeholder="Enter your name"
+              placeholderTextColor="#999999"
+              value={name}
+              onChangeText={(text) => setName(text)}
+            />
+            <TextInput
+              containerStyle={styles.input}
+              style={styles.inputText}
+              placeholder="Enter email"
+              placeholderTextColor="#999999"
+              value={email}
+              onChangeText={(text) => setEmail(text)}
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+            <TextInput
+              containerStyle={styles.input}
+              style={styles.inputText}
+              placeholder="Enter password"
+              placeholderTextColor="#999999"
+              value={password}
+              secureTextEntry
+              onChangeText={(text) => setPassword(text)}
+            />
+            <Button
+              text={loading ? "Creating Account..." : "Sign Up"}
+              onPress={() => {
+                register();
+              }}
+              style={styles.button}
+              disabled={loading || !profilePicture}
+            />
+            <Text style={styles.loginText}>
+              Already have an account?{" "}
+              <Text
+                style={styles.loginLink}
+                onPress={() => navigation.navigate("Login")}
+              >
+                Log In
+              </Text>
             </Text>
-          </Text>
+          </View>
         </KeyboardAwareScrollView>
       </TouchableWithoutFeedback>
     </Layout>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
-  },
-  title: {
-    marginBottom: 20,
-    fontWeight: "bold",
-  },
-  imageContainer: {
-    marginBottom: 20,
-  },
-  profilePicture: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-  },
-  placeholderImage: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: themeColor.gray200,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  placeholderText: {
-    color: themeColor.gray800,
-  },
-  input: {
-    marginBottom: 15,
-  },
-  button: {
-    marginTop: 10,
-    marginBottom: 10,
-  },
-  loginText: {
-    marginTop: 20,
-  },
-  loginLink: {
-    color: themeColor.primary,
-    fontWeight: "bold",
-  },
-});

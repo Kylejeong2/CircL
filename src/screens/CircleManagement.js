@@ -18,6 +18,7 @@ export default function CircleManagement({ navigation }) {
   const [joinCode, setJoinCode] = useState('');
   const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
   const [isJoinModalVisible, setIsJoinModalVisible] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
   const db = getFirestore();
 
   useEffect(() => {
@@ -95,6 +96,20 @@ export default function CircleManagement({ navigation }) {
     Alert.alert("Success", "You have joined the CircL");
   };
 
+  const generateInviteCode = async (circleId) => {
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const expiry = new Date();
+    expiry.setHours(expiry.getHours() + 24);
+    
+    await updateDoc(doc(db, "circles", circleId), {
+      inviteCode: code,
+      inviteCodeExpiry: expiry
+    });
+
+    setInviteCode(code);
+    Alert.alert("Invite Code", `Your invite code is: ${code}\nIt will expire in 24 hours.`);
+  };
+
   const leaveCircle = async (circleId) => {
     try {
       const circleRef = doc(db, "circles", circleId);
@@ -152,11 +167,16 @@ export default function CircleManagement({ navigation }) {
       <Text style={styles.circleName}>{item.name}</Text>
       <View style={styles.circleActions}>
         {isOwned ? (
-          <TouchableOpacity onPress={() => deleteCircle(item.id)}>
-            <Ionicons name="trash-outline" size={24} color="red" />
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity onPress={() => generateInviteCode(item.id)} style={styles.actionButton}>
+              <Ionicons name="share-outline" size={24} color="blue" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => deleteCircle(item.id)} style={styles.actionButton}>
+              <Ionicons name="trash-outline" size={24} color="red" />
+            </TouchableOpacity>
+          </>
         ) : (
-          <TouchableOpacity onPress={() => leaveCircle(item.id)}>
+          <TouchableOpacity onPress={() => leaveCircle(item.id)} style={styles.actionButton}>
             <Ionicons name="exit-outline" size={24} color="orange" />
           </TouchableOpacity>
         )}
@@ -302,6 +322,9 @@ const styles = StyleSheet.create({
   },
   circleActions: {
     flexDirection: 'row',
+  },
+  actionButton: {
+    marginLeft: 10,
   },
   emptyText: {
     textAlign: 'center',

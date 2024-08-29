@@ -1,11 +1,12 @@
 import React, { useContext, useState, useEffect } from 'react';
-import { View, ScrollView, Alert, Image, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, ScrollView, Alert, Image, StyleSheet, TouchableOpacity, Switch } from 'react-native';
 import { Layout, Text, Button, TextInput } from 'react-native-rapi-ui';
 import { AuthContext } from '../provider/AuthProvider';
 import { getAuth, updatePassword, deleteUser, EmailAuthProvider, reauthenticateWithCredential, updateProfile } from 'firebase/auth';
-import { getFirestore, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { getFirestore, doc, updateDoc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import * as ImagePicker from 'expo-image-picker';
+import { Picker } from '@react-native-picker/picker';
 
 export default function ({ navigation }) {
 	const auth = getAuth();
@@ -16,13 +17,19 @@ export default function ({ navigation }) {
 	const [newPassword, setNewPassword] = useState('');
 	const [isLoading, setIsLoading] = useState(false);
 	const [profileImage, setProfileImage] = useState(null);
+	const [proximityAlertsEnabled, setProximityAlertsEnabled] = useState(false);
+	const [proximityDistance, setProximityDistance] = useState('0.5');
+	const [customDistance, setCustomDistance] = useState('');
 
 	useEffect(() => {
 		if (userData?.uid) {
 			const userRef = doc(db, "users", userData.uid);
 			const unsubscribe = onSnapshot(userRef, (doc) => {
 				if (doc.exists()) {
-					setProfileImage(doc.data().profilePictureURL);
+					const data = doc.data();
+					setProfileImage(data.profilePictureURL);
+					setProximityAlertsEnabled(data.proximityAlertsEnabled || false);
+					setProximityDistance(data.proximityDistance?.toString() || '0.5');
 				}
 			});
 			return () => unsubscribe();
@@ -236,11 +243,48 @@ export default function ({ navigation }) {
 		setIsLoading(true);
 		try {
 			await auth.signOut();
+			// Clear any local state that contains user data
+			setCircles([]);
+			setSelectedCircle(null);
+			setCircleMembersData({});
+			// Navigate to the login screen or wherever appropriate
+			navigation.navigate('Login');
 		} catch (error) {
 			Alert.alert('Error', error.message);
 		} finally {
 			setIsLoading(false);
 		}
+	};
+
+	const handleProximityAlertsToggle = async (value) => {
+		setProximityAlertsEnabled(value);
+		await updateDoc(doc(db, "users", userData.uid), {
+			proximityAlertsEnabled: value,
+		});
+	};
+
+	const handleProximityDistanceChange = async (value) => {
+		if (value === 'custom') {
+			setProximityDistance('custom');
+		} else {
+			setProximityDistance(value);
+			await updateDoc(doc(db, "users", userData.uid), {
+				proximityDistance: parseFloat(value),
+			});
+		}
+	};
+
+	const handleCustomDistanceSubmit = async () => {
+		const distance = parseFloat(customDistance);
+		if (isNaN(distance) || distance <= 0) {
+			Alert.alert('Invalid Distance', 'Please enter a valid number greater than 0.');
+			return;
+		}
+		setProximityDistance(customDistance);
+		await updateDoc(doc(db, "users", userData.uid), {
+			proximityDistance: distance,
+		});
+		setCustomDistance('');
 	};
 
 	return (
@@ -285,6 +329,47 @@ export default function ({ navigation }) {
 						disabled={isLoading}
 						style={styles.button}
 					/>
+				</View>
+
+				<View style={styles.section}>
+					<Text style={styles.sectionTitle}>Proximity Alerts</Text>
+					<View style={styles.row}>
+						<Text>Enable Proximity Alerts</Text>
+						<Switch
+							value={proximityAlertsEnabled}
+							onValueChange={handleProximityAlertsToggle}
+						/>
+					</View>
+					<View style={styles.row}>
+						<Text>Alert Distance (miles)</Text>
+						<Picker
+							selectedValue={proximityDistance}
+							style={styles.picker}
+							onValueChange={handleProximityDistanceChange}
+						>
+							<Picker.Item label="0.5 miles" value="0.5" />
+							<Picker.Item label="1 mile" value="1" />
+							<Picker.Item label="2 miles" value="2" />
+							<Picker.Item label="5 miles" value="5" />
+							<Picker.Item label="Custom" value="custom" />
+						</Picker>
+					</View>
+					{proximityDistance === 'custom' && (
+						<View style={styles.row}>
+							<TextInput
+								containerStyle={styles.input}
+								placeholder="Enter custom distance"
+								value={customDistance}
+								onChangeText={setCustomDistance}
+								keyboardType="numeric"
+							/>
+							<Button
+								text="Set"
+								onPress={handleCustomDistanceSubmit}
+								style={styles.button}
+							/>
+						</View>
+					)}
 				</View>
 
 				<View style={styles.section}>
@@ -344,5 +429,14 @@ const styles = StyleSheet.create({
 	},
 	button: {
 		marginTop: 10,
+	},
+	row: {
+		flexDirection: 'row',
+		justifyContent: 'space-between',
+		alignItems: 'center',
+		marginBottom: 10,
+	},
+	picker: {
+		width: 150,
 	},
 });

@@ -1,10 +1,14 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   ScrollView,
   TouchableOpacity,
   View,
   KeyboardAvoidingView,
   Image,
+  StyleSheet,
+  Platform,
+  Animated,
+  Keyboard,
 } from "react-native";
 import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
 import {
@@ -12,178 +16,170 @@ import {
   Text,
   TextInput,
   Button,
-  useTheme,
   themeColor,
 } from "react-native-rapi-ui";
+import { LinearGradient } from 'expo-linear-gradient';
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#121212',
+  },
+  gradientBackground: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    height: '100%',
+  },
+  content: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    padding: 20,
+  },
+  logo: {
+    height: 120,
+    width: 120,
+    alignSelf: 'center',
+    marginBottom: 40,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    textAlign: 'center',
+    marginBottom: 30,
+  },
+  input: {
+    marginBottom: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 8,
+    borderWidth: 0,
+  },
+  inputText: {
+    color: '#ffffff',
+  },
+  button: {
+    marginTop: 10,
+    borderRadius: 8,
+  },
+  linkText: {
+    color: '#bb86fc',
+    fontWeight: 'bold',
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 20,
+  },
+});
 
 export default function ({ navigation }) {
-  const { isDarkmode, setTheme } = useTheme();
   const auth = getAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const titleOpacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const keyboardWillShowSub = Keyboard.addListener('keyboardWillShow', keyboardWillShow);
+    const keyboardWillHideSub = Keyboard.addListener('keyboardWillHide', keyboardWillHide);
+
+    return () => {
+      keyboardWillShowSub.remove();
+      keyboardWillHideSub.remove();
+    };
+  }, []);
+
+  const keyboardWillShow = () => {
+    Animated.timing(titleOpacity, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const keyboardWillHide = () => {
+    Animated.timing(titleOpacity, {
+      toValue: 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  };
 
   async function login() {
     setLoading(true);
-    await signInWithEmailAndPassword(auth, email, password).catch(function (
-      error
-    ) {
-      // Handle Errors here.
-      var errorCode = error.code;
-      var errorMessage = error.message;
-      // ...
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error) {
+      alert(error.message);
+    } finally {
       setLoading(false);
-      alert(errorMessage);
-    });
+    }
   }
 
   return (
-    <KeyboardAvoidingView behavior="height" enabled style={{ flex: 1 }}>
-      <Layout>
-        <ScrollView
-          contentContainerStyle={{
-            flexGrow: 1,
-          }}
-        >
-          <View
-            style={{
-              flex: 1,
-              justifyContent: "center",
-              alignItems: "center",
-              backgroundColor: isDarkmode ? "#17171E" : themeColor.white100,
-            }}
-          >
-            <Image
-              resizeMode="contain"
-              style={{
-                height: 220,
-                width: 220,
-              }}
-              source={require("../../../assets/login.png")}
-            />
-          </View>
-          <View
-            style={{
-              flex: 3,
-              paddingHorizontal: 20,
-              paddingBottom: 20,
-              backgroundColor: isDarkmode ? themeColor.dark : themeColor.white,
-            }}
-          >
-            <Text
-              fontWeight="bold"
-              style={{
-                alignSelf: "center",
-                padding: 30,
-              }}
-              size="h3"
-            >
-              Login
-            </Text>
-            <Text>Email</Text>
-            <TextInput
-              containerStyle={{ marginTop: 15 }}
-              placeholder="Enter your email"
-              value={email}
-              autoCapitalize="none"
-              autoCompleteType="off"
-              autoCorrect={false}
-              keyboardType="email-address"
-              onChangeText={(text) => setEmail(text)}
-            />
-
-            <Text style={{ marginTop: 15 }}>Password</Text>
-            <TextInput
-              containerStyle={{ marginTop: 15 }}
-              placeholder="Enter your password"
-              value={password}
-              autoCapitalize="none"
-              autoCompleteType="off"
-              autoCorrect={false}
-              secureTextEntry={true}
-              onChangeText={(text) => setPassword(text)}
-            />
-            <Button
-              text={loading ? "Loading" : "Continue"}
-              onPress={() => {
-                login();
-              }}
-              style={{
-                marginTop: 20,
-              }}
-              disabled={loading}
-            />
-
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                marginTop: 15,
-                justifyContent: "center",
-              }}
-            >
-              <Text size="md">Don't have an account?</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  navigation.navigate("Register");
-                }}
-              >
-                <Text
-                  size="md"
-                  fontWeight="bold"
-                  style={{
-                    marginLeft: 5,
-                  }}
-                >
-                  Register here
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                marginTop: 10,
-                justifyContent: "center",
-              }}
-            >
-              <TouchableOpacity
-                onPress={() => {
-                  navigation.navigate("ForgetPassword");
-                }}
-              >
-                <Text size="md" fontWeight="bold">
-                  Forget password
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                marginTop: 30,
-                justifyContent: "center",
-              }}
-            >
-              <TouchableOpacity
-                onPress={() => {
-                  isDarkmode ? setTheme("light") : setTheme("dark");
-                }}
-              >
-                <Text
-                  size="md"
-                  fontWeight="bold"
-                  style={{
-                    marginLeft: 5,
-                  }}
-                >
-                  {isDarkmode ? "☀️ light theme" : "🌑 dark theme"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </ScrollView>
-      </Layout>
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={styles.container}
+    >
+      <LinearGradient
+        colors={['#1a1a1a', '#121212']}
+        style={styles.gradientBackground}
+      />
+      <ScrollView 
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Image
+          resizeMode="contain"
+          style={styles.logo}
+          source={require("../../../assets/login.png")}
+        />
+        <Animated.View style={{ opacity: titleOpacity }}>
+          <Text style={styles.title}>Welcome Back</Text>
+        </Animated.View>
+        <TextInput
+          containerStyle={styles.input}
+          style={styles.inputText}
+          placeholder="Email"
+          placeholderTextColor="#999999"
+          value={email}
+          autoCapitalize="none"
+          autoCompleteType="email"
+          autoCorrect={false}
+          keyboardType="email-address"
+          onChangeText={setEmail}
+        />
+        <TextInput
+          containerStyle={styles.input}
+          style={styles.inputText}
+          placeholder="Password"
+          placeholderTextColor="#999999"
+          value={password}
+          autoCapitalize="none"
+          autoCompleteType="password"
+          autoCorrect={false}
+          secureTextEntry={true}
+          onChangeText={setPassword}
+        />
+        <Button
+          text={loading ? "Logging in..." : "Log In"}
+          onPress={login}
+          style={styles.button}
+          disabled={loading}
+          color="#bb86fc"
+        />
+        <View style={styles.footer}>
+          <Text style={{ color: '#ffffff' }}>Don't have an account? </Text>
+          <TouchableOpacity onPress={() => navigation.navigate("Register")}>
+            <Text style={styles.linkText}>Sign Up</Text>
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity onPress={() => navigation.navigate("ForgetPassword")} style={{ alignSelf: 'center', marginTop: 10 }}>
+          <Text style={styles.linkText}>Forgot Password?</Text>
+        </TouchableOpacity>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
