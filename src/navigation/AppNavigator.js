@@ -17,6 +17,7 @@ import CircleManagement from "../screens/CircleManagement";
 import Profile from "../screens/Profile";
 import Loading from "../screens/utils/Loading";
 import Circles from "../screens/Circles";
+import CircleDetails from "../screens/CircleDetails";
 // Auth screens
 import Login from "../screens/auth/Login";
 import Register from "../screens/auth/Register";
@@ -68,6 +69,7 @@ const Main = () => {
       <MainStack.Screen name="MainTabs" component={MainTabs} />
       <MainStack.Screen name="SecondScreen" component={SecondScreen} />
       <MainStack.Screen name="Circles" component={Circles} />
+      <MainStack.Screen name="CircleDetails" component={CircleDetails} />
     </MainStack.Navigator>
   );
 };
@@ -99,18 +101,6 @@ const MainTabs = () => {
         }}
       />
       <Tabs.Screen
-        name="Profile"
-        component={Profile}
-        options={{
-          tabBarLabel: ({ focused }) => (
-            <TabBarText focused={focused} title="Profile" />
-          ),
-          tabBarIcon: ({ focused }) => (
-            <TabBarIcon focused={focused} icon={"person"} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="CircleManagement"
         component={CircleManagement}
         options={{
@@ -119,6 +109,18 @@ const MainTabs = () => {
           ),
           tabBarIcon: ({ focused }) => (
             <TabBarIcon focused={focused} icon={"ellipse-outline"} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="Profile"
+        component={Profile}
+        options={{
+          tabBarLabel: ({ focused }) => (
+            <TabBarText focused={focused} title="Profile" />
+          ),
+          tabBarIcon: ({ focused }) => (
+            <TabBarIcon focused={focused} icon={"person"} />
           ),
         }}
       />
@@ -137,3 +139,4 @@ export default () => {
     </NavigationContainer>
   );
 };
+
