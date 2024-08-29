@@ -105,7 +105,7 @@ const MainTabs = () => {
         component={CircleManagement}
         options={{
           tabBarLabel: ({ focused }) => (
-            <TabBarText focused={focused} title="Circles" />
+            <TabBarText focused={focused} title="CircLs" />
           ),
           tabBarIcon: ({ focused }) => (
             <TabBarIcon focused={focused} icon={"people-circle-outline"} />

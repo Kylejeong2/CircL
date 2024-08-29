@@ -33,6 +33,8 @@ export default function ({ navigation }) {
     distance: 0.5,
   });
 
+  const [isNotificationsEnabled, setIsNotificationsEnabled] = useState(true);
+
   // Getting Location
   useEffect(() => {
     (async () => {
@@ -106,9 +108,11 @@ export default function ({ navigation }) {
         if (doc.exists()) {
           const data = doc.data();
           setProximityAlerts({
-            enabled: data.proximityAlertsEnabled || false,
+            enabled: data.proximityAlertsEnabled ?? true,
             distance: data.proximityDistance || 0.5,
           });
+          setIsNotificationsEnabled(data.isNotificationsEnabled ?? true);
+          setProfilePictureURL(data.profilePictureURL);
         }
       });
       return () => unsubscribe();
@@ -175,7 +179,7 @@ export default function ({ navigation }) {
   };
 
   const checkProximity = (members) => {
-    if (!proximityAlerts.enabled || !location) return;
+    if (!proximityAlerts.enabled || !location || !isNotificationsEnabled) return;
 
     Object.values(members).forEach((member) => {
       if (member.uid !== userData.uid && member.location) {
@@ -207,13 +211,30 @@ export default function ({ navigation }) {
   };
 
   const sendProximityAlert = async (member) => {
+    const mutualCircles = await getMutualCircles(member.uid);
+    const circleNames = mutualCircles.map(circle => circle.name).join(', ');
+
     await Notifications.scheduleNotificationAsync({
       content: {
         title: "Friend Nearby!",
-        body: `${member.name || member.email} is within ${proximityAlerts.distance} miles of you!`,
+        body: `${member.name} is within ${proximityAlerts.distance} miles of you! You're both in: ${circleNames}`,
       },
       trigger: null,
     });
+  };
+
+  const getMutualCircles = async (memberUid) => {
+    const userCircles = await getUserCircles(userData.uid);
+    const memberCircles = await getUserCircles(memberUid);
+    return userCircles.filter(circle => memberCircles.some(memberCircle => memberCircle.id === circle.id));
+  };
+
+  const getUserCircles = async (uid) => {
+    const userRef = doc(db, "users", uid);
+    const userDoc = await getDoc(userRef);
+    const circleIds = userDoc.data().memberCircles || [];
+    const circles = await Promise.all(circleIds.map(id => getDoc(doc(db, "circles", id))));
+    return circles.map(doc => ({ id: doc.id, ...doc.data() }));
   };
 
   const updateLocationInFirestore = async (location) => {
@@ -297,7 +318,7 @@ export default function ({ navigation }) {
               onPress={() => setIsPickerVisible(!isPickerVisible)}
             >
               <Text style={styles.dropdownButtonText}>
-                {selectedCircle ? selectedCircle.name : "Select a Circle"}
+                {selectedCircle ? selectedCircle.name : "Select a CircL"}
               </Text>
               <Icon name="chevron-down" size={20} color="#fff" />
             </TouchableOpacity>
@@ -344,7 +365,7 @@ export default function ({ navigation }) {
               </Marker>
             )}
              {selectedCircle && selectedCircleData && selectedCircleData.map((member) => (
-                member.location && (
+                member.id !== userData.uid && member.location && (
                   <Marker
                     key={member.id}
                     coordinate={{

@@ -1,5 +1,5 @@
 import React, { useContext, useState, useEffect } from "react";
-import { View, StyleSheet, TouchableOpacity, Alert, Modal, FlatList, Dimensions } from "react-native";
+import { View, StyleSheet, TouchableOpacity, Alert, Modal, FlatList, Dimensions, Clipboard } from "react-native";
 import { Layout, Text, Section, SectionContent, Button, TextInput } from "react-native-rapi-ui";
 import { AuthContext } from "../provider/AuthProvider";
 import { getFirestore, doc, updateDoc, arrayUnion, onSnapshot, collection, getDoc, setDoc, getDocs, query, where, arrayRemove, deleteDoc } from "firebase/firestore";
@@ -107,7 +107,11 @@ export default function CircleManagement({ navigation }) {
     });
 
     setInviteCode(code);
-    Alert.alert("Invite Code", `Your invite code is: ${code}\nIt will expire in 24 hours.`);
+  };
+
+  const copyInviteCode = () => {
+    Clipboard.setString(inviteCode);
+    Alert.alert("Copied", "Invite code copied to clipboard");
   };
 
   const leaveCircle = async (circleId) => {
@@ -164,12 +168,15 @@ export default function CircleManagement({ navigation }) {
       style={styles.circleItem}
       onPress={() => navigation.navigate('CircleDetails', { circleId: item.id })}
     >
-      <Text style={styles.circleName}>{item.name}</Text>
+      <View style={styles.circleNameContainer}>
+        <Text style={styles.circleName}>{item.name}</Text>
+      </View>
       <View style={styles.circleActions}>
         {isOwned ? (
           <>
-            <TouchableOpacity onPress={() => generateInviteCode(item.id)} style={styles.actionButton}>
-              <Ionicons name="share-outline" size={24} color="blue" />
+            <TouchableOpacity onPress={() => generateInviteCode(item.id)} style={styles.inviteButton}>
+              <Ionicons name="share-outline" size={24} color="white" />
+              <Text style={styles.inviteButtonText}>Invite</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => deleteCircle(item.id)} style={styles.actionButton}>
               <Ionicons name="trash-outline" size={24} color="red" />
@@ -241,7 +248,7 @@ export default function CircleManagement({ navigation }) {
               />
               <View style={styles.modalButtonContainer}>
                 <Button text="Create" onPress={createCircle} style={styles.modalButton} />
-                <Button text="Cancel" status="danger" onPress={() => setIsCreateModalVisible(false)} style={styles.modalButton} />
+                <Button text="Cancel" status="danger" onPress={() => setIsCreateModalVisible(false)} style={[styles.modalButton, styles.cancelButton]} />
               </View>
             </View>
           </View>
@@ -264,11 +271,31 @@ export default function CircleManagement({ navigation }) {
               />
               <View style={styles.modalButtonContainer}>
                 <Button text="Join" onPress={joinCircle} style={styles.modalButton} />
-                <Button text="Cancel" status="danger" onPress={() => setIsJoinModalVisible(false)} style={styles.modalButton} />
+                <Button text="Cancel" status="danger" onPress={() => setIsJoinModalVisible(false)} style={[styles.modalButton, styles.cancelButton]} />
               </View>
             </View>
           </View>
         </Modal>
+
+        {inviteCode && (
+          <Modal
+            visible={!!inviteCode}
+            animationType="slide"
+            transparent={true}
+            onRequestClose={() => setInviteCode('')}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalView}>
+                <Text style={styles.modalTitle}>Invite Code</Text>
+                <Text style={styles.inviteCodeText}>{inviteCode}</Text>
+                <View style={styles.modalButtonContainer}>
+                  <Button text="Copy Code" onPress={copyInviteCode} style={styles.modalButton} />
+                  <Button text="Close" status="danger" onPress={() => setInviteCode('')} style={[styles.modalButton, styles.cancelButton]} />
+                </View>
+              </View>
+            </View>
+          </Modal>
+        )}
       </View>
     </Layout>
   );
@@ -278,12 +305,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 20,
+    backgroundColor: '#f8f9fa',
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
     marginBottom: 20,
     textAlign: 'center',
+    color: '#343a40',
   },
   buttonContainer: {
     flexDirection: 'row',
@@ -293,43 +322,75 @@ const styles = StyleSheet.create({
   button: {
     flex: 1,
     marginHorizontal: 5,
+    marginBottom: 10,
+    backgroundColor: '#007bff',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   circlesContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     flex: 1,
   },
   section: {
-    flex: 1,
-    marginHorizontal: 5,
+    marginBottom: 20,
+    backgroundColor: '#ffffff',
+    borderRadius: 10,
+    padding: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 5,
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 10,
+    color: '#495057',
   },
   circleItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 15,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#e9ecef',
     borderRadius: 10,
     marginBottom: 10,
   },
+  circleNameContainer: {
+    flex: 1,
+    marginRight: 10,
+  },
   circleName: {
     fontSize: 18,
+    color: '#212529',
+    flexWrap: 'wrap',
   },
   circleActions: {
     flexDirection: 'row',
+    alignItems: 'center',
   },
   actionButton: {
     marginLeft: 10,
   },
+  inviteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#28a745',
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 5,
+    marginRight: 10,
+  },
+  inviteButtonText: {
+    color: 'white',
+    marginLeft: 5,
+  },
   emptyText: {
     textAlign: 'center',
     fontStyle: 'italic',
-    color: '#888',
+    color: '#6c757d',
   },
   modalOverlay: {
     flex: 1,
@@ -356,18 +417,34 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 20,
+    color: '#343a40',
   },
   input: {
     width: '100%',
-    marginBottom: 20,
+    marginBottom: 10,
+    marginTop: 10,
+    borderColor: '#ced4da',
+    borderWidth: 1,
+    borderRadius: 5,
+    padding: 10,
   },
   modalButtonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    marginTop: 20,
+    flexDirection: 'column',
     width: '100%',
   },
   modalButton: {
-    flex: 1,
-    marginHorizontal: 5,
+    marginBottom: 10,
+    backgroundColor: '#007bff',
+    borderRadius: 10,
+  },
+  cancelButton: {
+    backgroundColor: '#dc3545',
+  },
+  inviteCodeText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    color: '#007bff',
   },
 });

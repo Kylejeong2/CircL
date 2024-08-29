@@ -12,7 +12,7 @@ export default function ({ navigation }) {
 	const auth = getAuth();
 	const db = getFirestore();
 	const storage = getStorage();
-	const { userData, setUserData } = useContext(AuthContext);
+	const { userData } = useContext(AuthContext);
 	const [currentPassword, setCurrentPassword] = useState('');
 	const [newPassword, setNewPassword] = useState('');
 	const [isLoading, setIsLoading] = useState(false);
@@ -20,6 +20,8 @@ export default function ({ navigation }) {
 	const [proximityAlertsEnabled, setProximityAlertsEnabled] = useState(false);
 	const [proximityDistance, setProximityDistance] = useState('0.5');
 	const [customDistance, setCustomDistance] = useState('');
+	const [isNotificationsEnabled, setIsNotificationsEnabled] = useState(true);
+	const [tempProximityDistance, setTempProximityDistance] = useState('0.5');
 
 	useEffect(() => {
 		if (userData?.uid) {
@@ -28,8 +30,10 @@ export default function ({ navigation }) {
 				if (doc.exists()) {
 					const data = doc.data();
 					setProfileImage(data.profilePictureURL);
-					setProximityAlertsEnabled(data.proximityAlertsEnabled || false);
+					setProximityAlertsEnabled(data.proximityAlertsEnabled ?? true);
 					setProximityDistance(data.proximityDistance?.toString() || '0.5');
+					setTempProximityDistance(data.proximityDistance?.toString() || '0.5');
+					setIsNotificationsEnabled(data.isNotificationsEnabled ?? true);
 				}
 			});
 			return () => unsubscribe();
@@ -260,31 +264,30 @@ export default function ({ navigation }) {
 		setProximityAlertsEnabled(value);
 		await updateDoc(doc(db, "users", userData.uid), {
 			proximityAlertsEnabled: value,
+			isNotificationsEnabled: value,
 		});
+		setIsNotificationsEnabled(value);
 	};
 
-	const handleProximityDistanceChange = async (value) => {
+	const handleProximityDistanceChange = (value) => {
 		if (value === 'custom') {
-			setProximityDistance('custom');
+			setTempProximityDistance('custom');
 		} else {
-			setProximityDistance(value);
-			await updateDoc(doc(db, "users", userData.uid), {
-				proximityDistance: parseFloat(value),
-			});
+			setTempProximityDistance(value);
 		}
 	};
 
-	const handleCustomDistanceSubmit = async () => {
-		const distance = parseFloat(customDistance);
+	const handleSaveAlertDistance = async () => {
+		const distance = tempProximityDistance === 'custom' ? parseFloat(customDistance) : parseFloat(tempProximityDistance);
 		if (isNaN(distance) || distance <= 0) {
 			Alert.alert('Invalid Distance', 'Please enter a valid number greater than 0.');
 			return;
 		}
-		setProximityDistance(customDistance);
+		setProximityDistance(distance.toString());
 		await updateDoc(doc(db, "users", userData.uid), {
 			proximityDistance: distance,
 		});
-		setCustomDistance('');
+		Alert.alert('Success', 'Alert distance saved successfully.');
 	};
 
 	return (
@@ -341,11 +344,12 @@ export default function ({ navigation }) {
 						/>
 					</View>
 					<View style={styles.row}>
-						<Text>Alert Distance (miles)</Text>
+						<Text>Alert Distance</Text>
 						<Picker
-							selectedValue={proximityDistance}
+							selectedValue={tempProximityDistance}
 							style={styles.picker}
 							onValueChange={handleProximityDistanceChange}
+							enabled={proximityAlertsEnabled}
 						>
 							<Picker.Item label="0.5 miles" value="0.5" />
 							<Picker.Item label="1 mile" value="1" />
@@ -354,22 +358,24 @@ export default function ({ navigation }) {
 							<Picker.Item label="Custom" value="custom" />
 						</Picker>
 					</View>
-					{proximityDistance === 'custom' && (
+					{tempProximityDistance === 'custom' && (
 						<View style={styles.row}>
 							<TextInput
 								containerStyle={styles.input}
-								placeholder="Enter custom distance"
+								placeholder="Enter custom distance (in miles)"
 								value={customDistance}
 								onChangeText={setCustomDistance}
 								keyboardType="numeric"
-							/>
-							<Button
-								text="Set"
-								onPress={handleCustomDistanceSubmit}
-								style={styles.button}
+								editable={proximityAlertsEnabled}
 							/>
 						</View>
 					)}
+					<Button
+						text="Save Alert Distance"
+						onPress={handleSaveAlertDistance}
+						style={styles.button}
+						disabled={!proximityAlertsEnabled}
+					/>
 				</View>
 
 				<View style={styles.section}>

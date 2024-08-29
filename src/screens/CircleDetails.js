@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { View, StyleSheet, FlatList, Alert, Dimensions } from 'react-native';
+import { View, StyleSheet, FlatList, Alert, Dimensions, TouchableOpacity } from 'react-native';
 import { Layout, Text, Button } from 'react-native-rapi-ui';
 import { getFirestore, doc, getDoc, updateDoc, arrayRemove, onSnapshot } from 'firebase/firestore';
 import { AuthContext } from '../provider/AuthProvider';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
 
 const { width, height } = Dimensions.get('window');
 
@@ -69,6 +70,27 @@ export default function CircleDetails({ route, navigation }) {
     }
   };
 
+  const leaveCircle = async () => {
+    if (circle.owner === userData.uid) {
+      Alert.alert("Error", "You cannot leave a CircL that you own.");
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, "circles", circleId), {
+        members: arrayRemove(userData.uid)
+      });
+      await updateDoc(doc(db, "users", userData.uid), {
+        memberCircles: arrayRemove(circleId)
+      });
+      Alert.alert("Success", "You have left the CircL");
+      navigation.goBack();
+    } catch (error) {
+      console.error("Error leaving CircL:", error);
+      Alert.alert("Error", "Failed to leave the CircL");
+    }
+  };
+
   const renderMemberItem = ({ item }) => (
     <View style={styles.memberItem}>
       <Text>{item.name || item.email}</Text>
@@ -96,8 +118,21 @@ export default function CircleDetails({ route, navigation }) {
   return (
     <Layout>
       <View style={styles.container}>
-        <Text style={styles.title}>{circle.name}</Text>
-        <MapView
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Ionicons name="chevron-back" size={24} color="#007AFF" />
+          </TouchableOpacity>
+          <Text style={styles.title}>{circle.name}</Text>
+          {circle.owner !== userData.uid && (
+            <Button
+              text="Leave CircL"
+              status="danger"
+              onPress={leaveCircle}
+              style={styles.leaveButton}
+            />
+          )}
+        </View>
+        {/* <MapView
           style={styles.map}
           region={{
             latitude: userLocation?.coords.latitude || 0,
@@ -118,7 +153,7 @@ export default function CircleDetails({ route, navigation }) {
               />
             )
           ))}
-        </MapView>
+        </MapView> */}
         <Text style={styles.sectionTitle}>Members</Text>
         <FlatList
           data={members}
@@ -136,10 +171,24 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
   },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  backButton: {
+    padding: 5,
+  },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 20,
+    flex: 1,
+    textAlign: 'left',
+  },
+  leaveButton: {
+    backgroundColor: 'red',
+    width: 120,
   },
   sectionTitle: {
     fontSize: 20,
