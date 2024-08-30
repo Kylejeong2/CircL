@@ -24,6 +24,7 @@ export default function ({ navigation }) {
   const [isLoading, setIsLoading] = useState(true);
 
   const locationSubscription = useRef(null);
+  const mapRef = useRef(null);
 
   const [proximityAlerts, setProximityAlerts] = useState({
     enabled: false,
@@ -143,10 +144,15 @@ export default function ({ navigation }) {
           friend.location.longitude
         );
 
-        if (distance <= proximityAlerts.distance && !notifiedFriends.has(friend.id)) {
+        console.log(`Distance to ${friend.name || friend.email}: ${distance} km`);
+        console.log(`Proximity alert distance: ${proximityAlerts.distance} miles`);
+
+        if (distance <= proximityAlerts.distance * 1.60934 && !notifiedFriends.has(friend.id)) {
+          console.log(`Sending proximity alert for ${friend.name || friend.email}`);
           sendProximityAlert(friend);
           setNotifiedFriends(prev => new Set(prev).add(friend.id));
-        } else if (distance > proximityAlerts.distance && notifiedFriends.has(friend.id)) {
+        } else if (distance > proximityAlerts.distance * 1.60934 && notifiedFriends.has(friend.id)) {
+          console.log(`Removing ${friend.name || friend.email} from notified friends`);
           setNotifiedFriends(prev => {
             const newSet = new Set(prev);
             newSet.delete(friend.id);
@@ -171,13 +177,18 @@ export default function ({ navigation }) {
   };
 
   const sendProximityAlert = async (friend) => {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: "Friend Nearby!",
-        body: `${friend.name || friend.email} is within ${proximityAlerts.distance} miles of you!`,
-      },
-      trigger: null,
-    });
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: "Friend Nearby!",
+          body: `${friend.name || friend.email} is within ${proximityAlerts.distance} miles of you!`,
+        },
+        trigger: null,
+      });
+      console.log(`Proximity alert sent for ${friend.name || friend.email}`);
+    } catch (error) {
+      console.error("Error sending proximity alert:", error);
+    }
   };
 
   const updateLocationInFirestore = async (location) => {
@@ -234,12 +245,18 @@ export default function ({ navigation }) {
       <View style={styles.container}>
         {location ? (
           <MapView
+            ref={mapRef}
             style={styles.map}
-            region={{
+            initialRegion={{
               latitude: location?.coords.latitude || 0,
               longitude: location?.coords.longitude || 0,
               latitudeDelta: 0.0922,
               longitudeDelta: 0.0421,
+            }}
+            onRegionChangeComplete={(region) => {
+              if (mapRef.current) {
+                mapRef.current.setNativeProps({ region });
+              }
             }}
           >
             {location && (
