@@ -13,7 +13,7 @@ import TabBarText from "../components/utils/TabBarText";
 //Screens
 import Home from "../screens/Home";
 import SecondScreen from "../screens/SecondScreen";
-import CircleManagement from "../screens/CircleManagement";
+import Friends from "../screens/Friends";
 import Profile from "../screens/Profile";
 import Loading from "../screens/utils/Loading";
 import Circles from "../screens/Circles";
@@ -70,6 +70,7 @@ const Main = () => {
       <MainStack.Screen name="SecondScreen" component={SecondScreen} />
       <MainStack.Screen name="Circles" component={Circles} />
       <MainStack.Screen name="CircleDetails" component={CircleDetails} />
+      <MainStack.Screen name="Friends" component={Friends} />
     </MainStack.Navigator>
   );
 };
@@ -101,11 +102,11 @@ const MainTabs = () => {
         }}
       />
       <Tabs.Screen
-        name="CircleManagement"
-        component={CircleManagement}
+        name="Friends"
+        component={Friends}
         options={{
           tabBarLabel: ({ focused }) => (
-            <TabBarText focused={focused} title="CircLs" />
+            <TabBarText focused={focused} title="Friends" />
           ),
           tabBarIcon: ({ focused }) => (
             <TabBarIcon focused={focused} icon={"people-circle-outline"} />

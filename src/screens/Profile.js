@@ -31,8 +31,13 @@ export default function ({ navigation }) {
 					const data = doc.data();
 					setProfileImage(data.profilePictureURL);
 					setProximityAlertsEnabled(data.proximityAlertsEnabled ?? true);
-					setProximityDistance(data.proximityDistance?.toString() || '0.5');
-					setTempProximityDistance(data.proximityDistance?.toString() || '0.5');
+					const distance = data.proximityDistance?.toString() || '0.5';
+					setProximityDistance(distance);
+					setTempProximityDistance(distance);
+					if (!['0.5', '1', '2', '5'].includes(distance)) {
+						setCustomDistance(distance);
+						setTempProximityDistance('custom');
+					}
 					setIsNotificationsEnabled(data.isNotificationsEnabled ?? true);
 				}
 			});
@@ -274,6 +279,7 @@ export default function ({ navigation }) {
 			setTempProximityDistance('custom');
 		} else {
 			setTempProximityDistance(value);
+			setCustomDistance('');
 		}
 	};
 
@@ -355,7 +361,7 @@ export default function ({ navigation }) {
 							<Picker.Item label="1 mile" value="1" />
 							<Picker.Item label="2 miles" value="2" />
 							<Picker.Item label="5 miles" value="5" />
-							<Picker.Item label="Custom" value="custom" />
+							<Picker.Item label={tempProximityDistance === 'custom' ? `${customDistance} miles` : "Custom"} value="custom" />
 						</Picker>
 					</View>
 					{tempProximityDistance === 'custom' && (

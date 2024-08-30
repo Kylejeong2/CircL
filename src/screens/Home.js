@@ -1,30 +1,27 @@
 import React, { useState, useEffect, useContext, useRef } from "react";
-import { View, StyleSheet, Image, TouchableOpacity, Alert, ActivityIndicator, Dimensions } from "react-native";
+import { View, StyleSheet, Image, Alert, ActivityIndicator, Dimensions, TouchableOpacity } from "react-native";
 import { Layout, Text } from "react-native-rapi-ui";
 import * as Location from 'expo-location';
-import MapView, { Marker, Circle } from 'react-native-maps';
-import { getFirestore, doc, setDoc, onSnapshot, collection, query, where, getDocs, getDoc } from "firebase/firestore";
+import MapView, { Marker, Circle, Callout } from 'react-native-maps';
+import { getFirestore, doc, setDoc, onSnapshot, getDoc, updateDoc } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { AuthContext } from '../provider/AuthProvider';
-import Icon from 'react-native-vector-icons/FontAwesome';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Notifications from 'expo-notifications';
+import Icon from 'react-native-vector-icons/FontAwesome';
 
 const { width, height } = Dimensions.get('window');
 
 export default function ({ navigation }) {
   const [location, setLocation] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
-  const [selectedCircle, setSelectedCircle] = useState(null);
-  const [selectedCircleData, setSelectedCircleData] = useState(null);
+  const [friendsData, setFriendsData] = useState([]);
   const [profilePictureURL, setProfilePictureURL] = useState(null);
   const { userData } = useContext(AuthContext);
   const auth = getAuth();
   const db = getFirestore();
 
   const [isLoading, setIsLoading] = useState(true);
-  const [isPickerVisible, setIsPickerVisible] = useState(false);
-  const [circles, setCircles] = useState([]);
 
   const locationSubscription = useRef(null);
 
@@ -34,6 +31,7 @@ export default function ({ navigation }) {
   });
 
   const [isNotificationsEnabled, setIsNotificationsEnabled] = useState(true);
+  const [notifiedFriends, setNotifiedFriends] = useState(new Set());
 
   // Getting Location
   useEffect(() => {
@@ -64,23 +62,32 @@ export default function ({ navigation }) {
     };
   }, []);
 
-  // Loading the user's data
+  // Loading and fetching the user's data
   useEffect(() => {
     if (userData === null) {
       setIsLoading(true);
     } else {
       setIsLoading(false);
       fetchProfilePicture();
-      fetchUserCircles();
+      fetchFriendsData();
+
+      if (userData.uid) {
+        const userRef = doc(db, "users", userData.uid);
+        const unsubscribe = onSnapshot(userRef, (doc) => {
+          if (doc.exists()) {
+            const data = doc.data();
+            setProximityAlerts({
+              enabled: data.proximityAlertsEnabled ?? false,
+              distance: data.proximityDistance || 0.5,
+            });
+            setIsNotificationsEnabled(data.isNotificationsEnabled ?? true);
+            setProfilePictureURL(data.profilePictureURL);
+          }
+        });
+        return () => unsubscribe();
+      }
     }
   }, [userData]);
-
-  // Fetching the circle members
-  useEffect(() => {
-    if (selectedCircle) {
-      fetchCircleMembers();
-    }
-  }, [selectedCircle]);
 
   // Setting up the notification handler
   useEffect(() => {
@@ -96,109 +103,62 @@ export default function ({ navigation }) {
       const { status } = await Notifications.requestPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permission required', 'Notifications are required for proximity alerts.');
+        setProximityAlerts(prev => ({ ...prev, enabled: false }));
       }
     })();
   }, []);
 
-  // Fetching the user's data
-  useEffect(() => {
-    if (userData?.uid) {
-      const userRef = doc(db, "users", userData.uid);
-      const unsubscribe = onSnapshot(userRef, (doc) => {
-        if (doc.exists()) {
-          const data = doc.data();
-          setProximityAlerts({
-            enabled: data.proximityAlertsEnabled ?? true,
-            distance: data.proximityDistance || 0.5,
-          });
-          setIsNotificationsEnabled(data.isNotificationsEnabled ?? true);
-          setProfilePictureURL(data.profilePictureURL);
-        }
-      });
-      return () => unsubscribe();
-    }
-  }, [userData]);
-
-  const fetchUserCircles = async () => {
+  const fetchFriendsData = async () => {
     if (userData?.uid) {
       const userRef = doc(db, "users", userData.uid);
       const unsubscribe = onSnapshot(userRef, async (docSnapshot) => {
         if (docSnapshot.exists()) {
-          const userCircles = docSnapshot.data().memberCircles || [];
-          const circlePromises = userCircles.map(circleId => getDoc(doc(db, "circles", circleId)));
+          const userData = docSnapshot.data();
+          const friendIds = userData.friends || [];
+          const friendPromises = friendIds.map(id => getDoc(doc(db, "users", id)));
           try {
-            const circleSnapshots = await Promise.all(circlePromises);
-            const circleData = circleSnapshots.map(snapshot => ({ id: snapshot.id, ...snapshot.data() }));
-            setCircles(circleData);
+            const friendDocs = await Promise.all(friendPromises);
+            const friendData = friendDocs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setFriendsData(friendData);
+            checkProximity(friendData);
           } catch (error) {
-            console.error("Error fetching circle data:", error);
-            Alert.alert("Error", "Failed to fetch circle data. Please check your internet connection and try again.");
+            console.error("Error fetching friend data:", error);
+            Alert.alert("Error", "Failed to fetch friend data. Please check your internet connection and try again.");
           }
         }
-      }, (error) => {
-        console.error("Error in user document snapshot:", error);
-        Alert.alert("Error", "Failed to fetch user data. Please check your internet connection and try again.");
       });
       return () => unsubscribe();
     }
   };
 
-  const fetchCircleMembers = async () => {
-    if (!selectedCircle) return;
-    const circleRef = doc(db, "circles", selectedCircle.id);
-    const unsubscribe = onSnapshot(circleRef, async (docSnapshot) => {
-      if (docSnapshot.exists()) {
-        const circleData = docSnapshot.data();
-        const memberPromises = circleData.members.map(memberId => 
-          getDoc(doc(db, "users", memberId))
-        );
-        try {
-          const memberDocs = await Promise.all(memberPromises);
-          const memberData = memberDocs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }));
-          console.log(memberData);
-          setSelectedCircleData(memberData);
-          checkProximity(memberData);
-        } catch (error) {
-          console.error("Error fetching member data:", error);
-          Alert.alert("Error", "Failed to fetch member data. Please try again.");
-        }
-      } else {
-        console.error("Circle data not found for selected circle:", selectedCircle);
-        Alert.alert(
-          "Error",
-          "Circle data not found. Please try again or contact support if the issue persists.",
-          [{ text: "OK" }]
-        );
-      }
-    });
-
-    return unsubscribe;
-  };
-
-  const checkProximity = (members) => {
+  const checkProximity = (friends) => {
     if (!proximityAlerts.enabled || !location || !isNotificationsEnabled) return;
 
-    Object.values(members).forEach((member) => {
-      if (member.uid !== userData.uid && member.location) {
+    friends.forEach((friend) => {
+      if (friend.location) {
         const distance = calculateDistance(
           location.coords.latitude,
           location.coords.longitude,
-          member.location.latitude,
-          member.location.longitude
+          friend.location.latitude,
+          friend.location.longitude
         );
 
-        if (distance <= proximityAlerts.distance) {
-          sendProximityAlert(member);
+        if (distance <= proximityAlerts.distance && !notifiedFriends.has(friend.id)) {
+          sendProximityAlert(friend);
+          setNotifiedFriends(prev => new Set(prev).add(friend.id));
+        } else if (distance > proximityAlerts.distance && notifiedFriends.has(friend.id)) {
+          setNotifiedFriends(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(friend.id);
+            return newSet;
+          });
         }
       }
     });
   };
 
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371;
+    const R = 6371; // Radius of the Earth in km
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a = 
@@ -210,31 +170,14 @@ export default function ({ navigation }) {
     return distance;
   };
 
-  const sendProximityAlert = async (member) => {
-    const mutualCircles = await getMutualCircles(member.uid);
-    const circleNames = mutualCircles.map(circle => circle.name).join(', ');
-
+  const sendProximityAlert = async (friend) => {
     await Notifications.scheduleNotificationAsync({
       content: {
         title: "Friend Nearby!",
-        body: `${member.name} is within ${proximityAlerts.distance} miles of you! You're both in: ${circleNames}`,
+        body: `${friend.name || friend.email} is within ${proximityAlerts.distance} miles of you!`,
       },
       trigger: null,
     });
-  };
-
-  const getMutualCircles = async (memberUid) => {
-    const userCircles = await getUserCircles(userData.uid);
-    const memberCircles = await getUserCircles(memberUid);
-    return userCircles.filter(circle => memberCircles.some(memberCircle => memberCircle.id === circle.id));
-  };
-
-  const getUserCircles = async (uid) => {
-    const userRef = doc(db, "users", uid);
-    const userDoc = await getDoc(userRef);
-    const circleIds = userDoc.data().memberCircles || [];
-    const circles = await Promise.all(circleIds.map(id => getDoc(doc(db, "circles", id))));
-    return circles.map(doc => ({ id: doc.id, ...doc.data() }));
   };
 
   const updateLocationInFirestore = async (location) => {
@@ -268,22 +211,6 @@ export default function ({ navigation }) {
     }
   };
 
-  const handleMarkerPress = (userId) => {
-    const member = selectedCircleData[userId];
-    if (member) {
-      const lastTracked = member.lastTracked ? new Date(member.lastTracked.toDate()).toLocaleString() : 'Unknown';
-      Alert.alert(
-        member.name || member.email,
-        `Email: ${member.email}\nLast tracked: ${lastTracked}`,
-        [{ text: "OK" }]
-      );
-    }
-  };
-
-  const handleCircleSelect = (circle) => {
-    setSelectedCircle(circle);
-  };
-
   if (isLoading) {
     return (
       <Layout>
@@ -294,14 +221,8 @@ export default function ({ navigation }) {
           <View style={styles.loadingContent}>
             <ActivityIndicator size="large" color="#ffffff" />
             <Text style={styles.loadingText}>
-              Gathering your CircL...
+              Finding your friends...
             </Text>
-            <Icon 
-              name="users" 
-              size={80} 
-              color="#ffffff"
-              style={styles.loadingIcon}
-            />
           </View>
         </LinearGradient>
       </Layout>
@@ -311,35 +232,6 @@ export default function ({ navigation }) {
   return (
     <Layout>
       <View style={styles.container}>
-        <View style={styles.overlay}>
-          {circles.length > 0 ? (
-            <TouchableOpacity
-              style={styles.dropdownButton}
-              onPress={() => setIsPickerVisible(!isPickerVisible)}
-            >
-              <Text style={styles.dropdownButtonText}>
-                {selectedCircle ? selectedCircle.name : "Select a CircL"}
-              </Text>
-              <Icon name="chevron-down" size={20} color="#fff" />
-            </TouchableOpacity>
-          ) : null}
-          {isPickerVisible && (
-            <View style={styles.pickerContainer}>
-              {circles.map((circle) => (
-                <TouchableOpacity
-                  key={circle.id}
-                  style={styles.pickerItem}
-                  onPress={() => {
-                    handleCircleSelect(circle);
-                    setIsPickerVisible(false);
-                  }}
-                >
-                  <Text style={styles.pickerItemText}>{circle.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-        </View>
         {location ? (
           <MapView
             style={styles.map}
@@ -364,23 +256,30 @@ export default function ({ navigation }) {
                 />
               </Marker>
             )}
-             {selectedCircle && selectedCircleData && selectedCircleData.map((member) => (
-                member.id !== userData.uid && member.location && (
-                  <Marker
-                    key={member.id}
-                    coordinate={{
-                      latitude: member.location.latitude,
-                      longitude: member.location.longitude,
-                    }}
-                    title={member.name || member.email}
-                  >
-                    <Image
-                      source={{ uri: member.profilePictureURL || profilePictureURL }}
-                      style={{ width: 40, height: 40, borderRadius: 20 }}
-                    />
-                    </Marker>
-                )
-              ))}
+            {friendsData.map((friend) => (
+              friend.location && (
+                <Marker
+                  key={friend.id}
+                  coordinate={{
+                    latitude: friend.location.latitude,
+                    longitude: friend.location.longitude,
+                  }}
+                  title={friend.name || friend.email}
+                >
+                  <Image
+                    source={{ uri: friend.profilePictureURL || profilePictureURL }}
+                    style={{ width: 40, height: 40, borderRadius: 20 }}
+                  />
+                  <Callout>
+                    <View style={styles.calloutContainer}>
+                      <Text style={styles.calloutTitle}>{friend.name || friend.email}</Text>
+                      <Text style={styles.calloutText}>Email: {friend.email}</Text>
+                      <Text style={styles.calloutText}>Last tracked: {friend.lastTracked ? new Date(friend.lastTracked.toDate()).toLocaleString() : 'Unknown'}</Text>
+                    </View>
+                  </Callout>
+                </Marker>
+              )
+            ))}
             {proximityAlerts.enabled && location && (
               <Circle
                 center={{
@@ -396,6 +295,27 @@ export default function ({ navigation }) {
         ) : (
           <Text>{errorMsg || 'Loading map...'}</Text>
         )}
+        <View style={styles.overlay}>
+          <TouchableOpacity
+            style={styles.alertButton}
+            onPress={() => {
+              if (!isNotificationsEnabled) {
+                Alert.alert('Notifications Disabled', 'Please enable notifications in your profile settings to use proximity alerts.');
+                return;
+              }
+              setProximityAlerts(prev => {
+                const newState = { ...prev, enabled: !prev.enabled };
+                // Update Firestore with the new state
+                updateDoc(doc(db, "users", userData.uid), {
+                  proximityAlertsEnabled: newState.enabled
+                });
+                return newState;
+              });
+            }}
+          >
+            <Icon name={proximityAlerts.enabled ? "bell" : "bell-slash"} size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
       </View>
     </Layout>
   );
@@ -407,43 +327,6 @@ const styles = StyleSheet.create({
   },
   map: {
     flex: 1,
-  },
-  overlay: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    right: 10,
-    zIndex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    padding: 10,
-    borderRadius: 5,
-  },
-  dropdownButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#007AFF',
-    padding: 10,
-    borderRadius: 5,
-  },
-  dropdownButtonText: {
-    fontSize: 16,
-    color: '#fff',
-  },
-  pickerContainer: {
-    marginTop: 5,
-    backgroundColor: '#fff',
-    borderRadius: 5,
-    borderWidth: 1,
-    borderColor: '#007AFF',
-  },
-  pickerItem: {
-    padding: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  pickerItemText: {
-    fontSize: 16,
   },
   loadingContainer: {
     flex: 1,
@@ -462,7 +345,27 @@ const styles = StyleSheet.create({
     marginVertical: 20,
     textAlign: 'center',
   },
-  loadingIcon: {
-    marginTop: 20,
+  calloutContainer: {
+    width: 200,
+    padding: 10,
+  },
+  calloutTitle: {
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginBottom: 5,
+  },
+  calloutText: {
+    fontSize: 14,
+  },
+  overlay: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    zIndex: 1,
+  },
+  alertButton: {
+    backgroundColor: '#007AFF',
+    padding: 10,
+    borderRadius: 5,
   },
 });
