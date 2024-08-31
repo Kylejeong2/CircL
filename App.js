@@ -2,7 +2,6 @@ import React from "react";
 import AppNavigator from "./src/navigation/AppNavigator";
 import { AuthProvider } from "./src/provider/AuthProvider";
 import { ThemeProvider } from "react-native-rapi-ui";
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function App() {
   const images = [

@@ -357,6 +357,7 @@ export default function ({ navigation }) {
 							onValueChange={handleProximityDistanceChange}
 							enabled={proximityAlertsEnabled}
 						>
+							<Picker.Item label="0.1 miles" value="0.1" />
 							<Picker.Item label="0.5 miles" value="0.5" />
 							<Picker.Item label="1 mile" value="1" />
 							<Picker.Item label="2 miles" value="2" />

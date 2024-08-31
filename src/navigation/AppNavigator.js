@@ -16,8 +16,7 @@ import SecondScreen from "../screens/SecondScreen";
 import Friends from "../screens/Friends";
 import Profile from "../screens/Profile";
 import Loading from "../screens/utils/Loading";
-import Circles from "../screens/Circles";
-import CircleDetails from "../screens/CircleDetails";
+
 // Auth screens
 import Login from "../screens/auth/Login";
 import Register from "../screens/auth/Register";
@@ -68,8 +67,6 @@ const Main = () => {
     >
       <MainStack.Screen name="MainTabs" component={MainTabs} />
       <MainStack.Screen name="SecondScreen" component={SecondScreen} />
-      <MainStack.Screen name="Circles" component={Circles} />
-      <MainStack.Screen name="CircleDetails" component={CircleDetails} />
       <MainStack.Screen name="Friends" component={Friends} />
     </MainStack.Navigator>
   );

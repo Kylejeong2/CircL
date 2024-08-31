@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useContext, useRef } from "react";
-import { View, StyleSheet, Image, Alert, ActivityIndicator, Dimensions, TouchableOpacity } from "react-native";
+import { View, StyleSheet, Image, Alert, ActivityIndicator, Dimensions, TouchableOpacity, PermissionsAndroid } from "react-native";
 import { Layout, Text } from "react-native-rapi-ui";
-import * as Location from 'expo-location';
 import MapView, { Marker, Circle, Callout } from 'react-native-maps';
 import { getFirestore, doc, setDoc, onSnapshot, getDoc, updateDoc } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
@@ -9,8 +8,38 @@ import { AuthContext } from '../provider/AuthProvider';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Notifications from 'expo-notifications';
 import Icon from 'react-native-vector-icons/FontAwesome';
+import * as Location from 'expo-location';
+import * as TaskManager from 'expo-task-manager';
+import * as BackgroundFetch from 'expo-background-fetch';
 
 const { width, height } = Dimensions.get('window');
+
+const LOCATION_TASK_NAME = 'background-location-task';
+
+TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
+  if (error) {
+    console.error(error);
+    return;
+  }
+  if (data) {
+    const { locations } = data;
+    const location = locations[0];
+    if (location) {
+      try {
+        const { latitude, longitude } = location.coords;
+        const user = getAuth().currentUser;
+        if (user) {
+          await setDoc(doc(getFirestore(), "users", user.uid), {
+            location: { latitude, longitude },
+            lastTracked: new Date()
+          }, { merge: true });
+        }
+      } catch (err) {
+        console.error("Error updating location in background:", err);
+      }
+    }
+  }
+});
 
 export default function ({ navigation }) {
   const [location, setLocation] = useState(null);
@@ -23,7 +52,6 @@ export default function ({ navigation }) {
 
   const [isLoading, setIsLoading] = useState(true);
 
-  const locationSubscription = useRef(null);
   const mapRef = useRef(null);
 
   const [proximityAlerts, setProximityAlerts] = useState({
@@ -34,34 +62,49 @@ export default function ({ navigation }) {
   const [isNotificationsEnabled, setIsNotificationsEnabled] = useState(true);
   const [notifiedFriends, setNotifiedFriends] = useState(new Set());
 
-  // Getting Location
   useEffect(() => {
-    (async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setErrorMsg('Permission to access location was denied');
-        return;
-      }
-
-      locationSubscription.current = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.High,
-          timeInterval: 5000,
-          distanceInterval: 5
-        },
-        (newLocation) => {
-          setLocation(newLocation);
-          updateLocationInFirestore(newLocation);
-        }
-      );
-    })();
-
+    requestLocationPermission();
     return () => {
-      if (locationSubscription.current) {
-        locationSubscription.current.remove();
-      }
+      Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
     };
   }, []);
+
+  const requestLocationPermission = async () => {
+    try {
+      const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
+      if (foregroundStatus === 'granted') {
+        const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
+        if (backgroundStatus === 'granted') {
+          await startBackgroundTracking();
+        } else {
+          console.log('Background location permission denied');
+        }
+      } else {
+        console.log('Foreground location permission denied');
+      }
+    } catch (err) {
+      console.warn(err);
+    }
+  };
+
+  const startBackgroundTracking = async () => {
+    await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
+      accuracy: Location.Accuracy.Balanced,
+      timeInterval: 60000,
+      distanceInterval: 0,
+      foregroundService: {
+        notificationTitle: "Location Tracking",
+        notificationBody: "Tracking your location in the background",
+      },
+    });
+
+    // Register background fetch task
+    await BackgroundFetch.registerTaskAsync(LOCATION_TASK_NAME, {
+      minimumInterval: 60, // 60 seconds
+      stopOnTerminate: false,
+      startOnBoot: true,
+    });
+  };
 
   // Loading and fetching the user's data
   useEffect(() => {
@@ -83,6 +126,7 @@ export default function ({ navigation }) {
             });
             setIsNotificationsEnabled(data.isNotificationsEnabled ?? true);
             setProfilePictureURL(data.profilePictureURL);
+            setLocation(data.location);
           }
         });
         return () => unsubscribe();
@@ -138,8 +182,8 @@ export default function ({ navigation }) {
     friends.forEach((friend) => {
       if (friend.location) {
         const distance = calculateDistance(
-          location.coords.latitude,
-          location.coords.longitude,
+          location.latitude,
+          location.longitude,
           friend.location.latitude,
           friend.location.longitude
         );
@@ -191,24 +235,6 @@ export default function ({ navigation }) {
     }
   };
 
-  const updateLocationInFirestore = async (location) => {
-    const user = auth.currentUser;
-    if (user) {
-      try {
-        await setDoc(doc(db, "users", user.uid), {
-          email: user.email,
-          location: {
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-          },
-          lastTracked: new Date()
-        }, { merge: true });
-      } catch (error) {
-        console.error("Error updating location in Firestore:", error);
-      }
-    }
-  };
-
   const fetchProfilePicture = async () => {
     if (userData?.uid) {
       try {
@@ -248,8 +274,8 @@ export default function ({ navigation }) {
             ref={mapRef}
             style={styles.map}
             initialRegion={{
-              latitude: location?.coords.latitude || 0,
-              longitude: location?.coords.longitude || 0,
+              latitude: location?.latitude || 0,
+              longitude: location?.longitude || 0,
               latitudeDelta: 0.0922,
               longitudeDelta: 0.0421,
             }}
@@ -262,8 +288,8 @@ export default function ({ navigation }) {
             {location && (
               <Marker
                 coordinate={{
-                  latitude: location.coords.latitude,
-                  longitude: location.coords.longitude,
+                  latitude: location.latitude,
+                  longitude: location.longitude,
                 }}
                 title="Your Location"
               >
@@ -300,8 +326,8 @@ export default function ({ navigation }) {
             {proximityAlerts.enabled && location && (
               <Circle
                 center={{
-                  latitude: location.coords.latitude,
-                  longitude: location.coords.longitude,
+                  latitude: location.latitude,
+                  longitude: location.longitude,
                 }}
                 radius={proximityAlerts.distance * 1609.34}
                 fillColor="rgba(0, 150, 255, 0.2)"
@@ -377,7 +403,7 @@ const styles = StyleSheet.create({
   overlay: {
     position: 'absolute',
     top: 10,
-    right: 10,
+    left: 10,
     zIndex: 1,
   },
   alertButton: {

@@ -1,9 +1,10 @@
 import React, { useContext, useState, useEffect } from "react";
-import { View, StyleSheet, FlatList, Alert, TouchableOpacity, Clipboard, Image } from "react-native";
+import { View, StyleSheet, FlatList, Alert, TouchableOpacity, Image } from "react-native";
 import { Layout, Text, Button, TextInput } from "react-native-rapi-ui";
 import { AuthContext } from "../provider/AuthProvider";
 import { getFirestore, doc, updateDoc, arrayUnion, arrayRemove, onSnapshot, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import * as Crypto from 'expo-crypto';
 
 export default function Friends({ navigation }) {
@@ -229,6 +230,7 @@ const styles = StyleSheet.create({
   },
   button: {
     marginBottom: 20,
+    marginTop: 10,
   },
   sectionTitle: {
     fontSize: 18,
